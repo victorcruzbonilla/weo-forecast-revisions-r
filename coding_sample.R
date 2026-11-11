@@ -35,7 +35,6 @@
 # 1. PROJECT SETUP
 # ------------------------------------------------------------
 
-# Required packages
 required_packages <- c(
   "readxl",
   "dplyr",
@@ -46,7 +45,6 @@ required_packages <- c(
 )
 
 
-# Check whether required packages are installed
 missing_packages <- required_packages[
   !vapply(
     required_packages,
@@ -72,7 +70,6 @@ if (length(missing_packages) > 0) {
 }
 
 
-# Load packages
 library(readxl)
 library(dplyr)
 library(tidyr)
@@ -84,13 +81,6 @@ library(readr)
 # ------------------------------------------------------------
 # 2. AUTOMATIC PROJECT ROOT DETECTION
 # ------------------------------------------------------------
-
-# The script determines its own location so users do not need
-# to manually set the working directory.
-#
-# This allows the repository to be downloaded, unzipped,
-# opened in RStudio, and executed directly.
-
 
 get_script_path <- function() {
 
@@ -104,6 +94,7 @@ get_script_path <- function() {
     path <- rstudioapi::getSourceEditorContext()$path
 
     if (nzchar(path)) {
+
       return(
         normalizePath(
           path,
@@ -126,6 +117,7 @@ get_script_path <- function() {
     value = TRUE
   )
 
+
   if (length(file_argument) > 0) {
 
     path <- sub(
@@ -145,15 +137,13 @@ get_script_path <- function() {
 
 
   # Fallback
-  return(
-    normalizePath(
-      file.path(
-        getwd(),
-        "coding_sample.R"
-      ),
-      winslash = "/",
-      mustWork = FALSE
-    )
+  normalizePath(
+    file.path(
+      getwd(),
+      "coding_sample.R"
+    ),
+    winslash = "/",
+    mustWork = FALSE
   )
 }
 
@@ -165,7 +155,6 @@ project_root <- dirname(
 )
 
 
-# Project folders
 data_dir <- file.path(
   project_root,
   "data"
@@ -177,7 +166,6 @@ output_dir <- file.path(
 )
 
 
-# Create output folder if needed
 if (!dir.exists(output_dir)) {
 
   dir.create(
@@ -238,7 +226,6 @@ message(
   project_root
 )
 
-
 message(
   "All required input files were found."
 )
@@ -247,11 +234,6 @@ message(
 # ------------------------------------------------------------
 # 4. DATA IMPORT
 # ------------------------------------------------------------
-
-# WEO workbooks may use different worksheet names across
-# publication vintages. The first worksheet is therefore
-# selected dynamically.
-
 
 read_weo_file <- function(path) {
 
@@ -281,16 +263,12 @@ weo_oct_2026_raw <- read_weo_file(
 # 5. BASIC DATA VALIDATION
 # ------------------------------------------------------------
 
-# Confirm that imported datasets contain observations.
-
 stopifnot(
   nrow(weo_oct_2025_raw) > 0,
   nrow(weo_apr_2026_raw) > 0,
   nrow(weo_oct_2026_raw) > 0
 )
 
-
-# Variables required for the analysis.
 
 required_columns <- c(
   "SERIES_CODE",
@@ -346,11 +324,6 @@ validate_columns(
 # 6. DATA HARMONIZATION
 # ------------------------------------------------------------
 
-# WEO vintages contain metadata followed by annual observations.
-# Because metadata structures vary across vintages, year columns
-# are identified dynamically rather than by fixed column numbers.
-
-
 harmonize_weo <- function(
   data,
   vintage_name
@@ -392,9 +365,7 @@ harmonize_weo <- function(
     ) %>%
 
     mutate(
-      year = as.integer(
-        year
-      ),
+      year = as.integer(year),
 
       value = suppressWarnings(
         as.numeric(value)
@@ -410,9 +381,7 @@ harmonize_weo <- function(
     )
 
 
-  return(
-    harmonized_data
-  )
+  harmonized_data
 }
 
 
@@ -432,7 +401,6 @@ weo_oct_2026 <- harmonize_weo(
 )
 
 
-# Combine harmonized datasets
 weo_all <- bind_rows(
   weo_oct_2025,
   weo_apr_2026,
@@ -459,8 +427,6 @@ stopifnot(
 )
 
 
-# Check uniqueness of country-series-year observations.
-
 duplicate_observations <- weo_all %>%
 
   count(
@@ -485,8 +451,6 @@ if (nrow(duplicate_observations) > 0) {
   )
 }
 
-
-# Summary of harmonized datasets.
 
 data_summary <- weo_all %>%
 
@@ -528,18 +492,21 @@ print(
 # 8. REAL GDP GROWTH FORECASTS
 # ------------------------------------------------------------
 
-# The main analysis focuses on the IMF WEO series
-# NGDP_RPCH: annual percentage change in real GDP.
+# Main indicator:
+# IMF WEO real GDP growth series.
 #
-# The target forecast year is 2026.
-
+# Exact series pattern:
+# *.NGDP_RPCH.A
+#
+# This exact pattern prevents accidental inclusion of related
+# series such as NGDP_RPCHMK.
 
 gdp_growth_2026 <- weo_all %>%
 
   filter(
     str_detect(
       SERIES_CODE,
-      "NGDP_RPCH"
+      "\\.NGDP_RPCH\\.A$"
     ),
     year == 2026
   ) %>%
@@ -548,6 +515,12 @@ gdp_growth_2026 <- weo_all %>%
     COUNTRY,
     vintage,
     value
+  ) %>%
+
+  mutate(
+    value = as.numeric(
+      value
+    )
   )
 
 
@@ -560,12 +533,32 @@ if (nrow(gdp_growth_2026) == 0) {
 
 
 # ------------------------------------------------------------
-# 9. RESHAPE FORECAST VINTAGES
+# 9. CHECK UNIQUENESS BEFORE RESHAPING
 # ------------------------------------------------------------
 
-# Convert publication vintages into separate columns so that
-# forecast revisions can be calculated directly.
+gdp_duplicates <- gdp_growth_2026 %>%
 
+  count(
+    COUNTRY,
+    vintage
+  ) %>%
+
+  filter(
+    n > 1
+  )
+
+
+if (nrow(gdp_duplicates) > 0) {
+
+  stop(
+    "Multiple real GDP growth observations were found for the same country and vintage."
+  )
+}
+
+
+# ------------------------------------------------------------
+# 10. RESHAPE FORECAST VINTAGES
+# ------------------------------------------------------------
 
 forecast_revisions <- gdp_growth_2026 %>%
 
@@ -578,15 +571,26 @@ forecast_revisions <- gdp_growth_2026 %>%
     forecast_oct_2025 = `October 2025`,
     forecast_apr_2026 = `April 2026`,
     forecast_oct_2026 = `October 2026`
+  ) %>%
+
+  mutate(
+    forecast_oct_2025 = as.numeric(
+      forecast_oct_2025
+    ),
+
+    forecast_apr_2026 = as.numeric(
+      forecast_apr_2026
+    ),
+
+    forecast_oct_2026 = as.numeric(
+      forecast_oct_2026
+    )
   )
 
 
 # ------------------------------------------------------------
-# 10. CONSTRUCT FORECAST REVISION VARIABLES
+# 11. CONSTRUCT FORECAST REVISION VARIABLES
 # ------------------------------------------------------------
-
-# Revisions are measured in percentage points.
-
 
 forecast_revisions <- forecast_revisions %>%
 
@@ -604,7 +608,7 @@ forecast_revisions <- forecast_revisions %>%
 
 
 # ------------------------------------------------------------
-# 11. VALIDATE FORECAST DATASET
+# 12. VALIDATE FORECAST DATASET
 # ------------------------------------------------------------
 
 duplicate_check <- forecast_revisions %>%
@@ -626,8 +630,6 @@ if (nrow(duplicate_check) > 0) {
 }
 
 
-# Identify incomplete forecast histories.
-
 missing_forecasts <- forecast_revisions %>%
 
   filter(
@@ -647,12 +649,8 @@ if (nrow(missing_forecasts) > 0) {
 
 
 # ------------------------------------------------------------
-# 12. SELECTED LATIN AMERICAN ECONOMIES
+# 13. SELECTED LATIN AMERICAN ECONOMIES
 # ------------------------------------------------------------
-
-# The coding sample uses a transparent, manually defined group
-# of economies for a compact regional comparison.
-
 
 selected_countries <- c(
   "El Salvador",
@@ -684,8 +682,6 @@ latin_america_revisions <- forecast_revisions %>%
   )
 
 
-# Check that requested comparison countries were found.
-
 countries_found <- unique(
   latin_america_revisions$COUNTRY
 )
@@ -710,7 +706,7 @@ if (length(countries_missing) > 0) {
 
 
 # ------------------------------------------------------------
-# 13. ANALYTICAL TABLE
+# 14. ANALYTICAL TABLE
 # ------------------------------------------------------------
 
 forecast_table <- latin_america_revisions %>%
@@ -738,13 +734,8 @@ print(
 
 
 # ------------------------------------------------------------
-# 14. EL SALVADOR EXAMPLE
+# 15. EL SALVADOR EXAMPLE
 # ------------------------------------------------------------
-
-# El Salvador is extracted as a country-level example because
-# it is the author's home economy and provides an intuitive
-# illustration of how forecast revisions are calculated.
-
 
 el_salvador <- forecast_table %>%
 
@@ -768,7 +759,7 @@ if (nrow(el_salvador) == 1) {
 
 
 # ------------------------------------------------------------
-# 15. EXPORT ANALYTICAL TABLE
+# 16. EXPORT ANALYTICAL TABLE
 # ------------------------------------------------------------
 
 table_output_path <- file.path(
@@ -784,13 +775,8 @@ write_csv(
 
 
 # ------------------------------------------------------------
-# 16. VISUALIZATION
+# 17. VISUALIZATION
 # ------------------------------------------------------------
-
-# The chart shows how the IMF's forecast for 2026 real GDP
-# growth changed between the October 2025 and October 2026
-# WEO vintages.
-
 
 forecast_plot_data <- forecast_table %>%
 
@@ -848,7 +834,6 @@ forecast_revision_plot <- ggplot(
   ) +
 
   theme(
-
     panel.grid.major.y =
       element_blank(),
 
@@ -871,7 +856,6 @@ forecast_revision_plot <- ggplot(
         hjust = 0,
         size = 9
       )
-
   )
 
 
@@ -881,7 +865,7 @@ print(
 
 
 # ------------------------------------------------------------
-# 17. EXPORT FIGURE
+# 18. EXPORT FIGURE
 # ------------------------------------------------------------
 
 figure_output_path <- file.path(
@@ -904,7 +888,7 @@ ggsave(
 
 
 # ------------------------------------------------------------
-# 18. COMPLETION CHECK
+# 19. COMPLETION CHECK
 # ------------------------------------------------------------
 
 stopifnot(
