@@ -41,7 +41,8 @@ required_packages <- c(
   "tidyr",
   "stringr",
   "ggplot2",
-  "readr"
+  "readr",
+  "patchwork"
 )
 
 
@@ -76,6 +77,7 @@ library(tidyr)
 library(stringr)
 library(ggplot2)
 library(readr)
+library(patchwork)
 
 
 # ------------------------------------------------------------
@@ -492,14 +494,11 @@ print(
 # 8. REAL GDP GROWTH FORECASTS
 # ------------------------------------------------------------
 
-# Main indicator:
-# IMF WEO real GDP growth series.
-#
-# Exact series pattern:
+# Exact IMF WEO real GDP growth series:
 # *.NGDP_RPCH.A
 #
-# This exact pattern prevents accidental inclusion of related
-# series such as NGDP_RPCHMK.
+# Exact matching prevents inclusion of related series such as
+# NGDP_RPCHMK.
 
 gdp_growth_2026 <- weo_all %>%
 
@@ -551,7 +550,10 @@ gdp_duplicates <- gdp_growth_2026 %>%
 if (nrow(gdp_duplicates) > 0) {
 
   stop(
-    "Multiple real GDP growth observations were found for the same country and vintage."
+    paste0(
+      "Multiple real GDP growth observations were found ",
+      "for the same country and vintage."
+    )
   )
 }
 
@@ -775,15 +777,7 @@ write_csv(
 
 
 # ------------------------------------------------------------
-# 17. INFOGRAPHIC VISUALIZATION
-# ------------------------------------------------------------
-
-# This section transforms the analytical results into a
-# compact policy-style infographic while preserving full
-# reproducibility from the underlying WEO data.
-
-# ------------------------------------------------------------
-# 17.1 PREPARE INFOGRAPHIC DATA
+# 17. INFOGRAPHIC DATA PREPARATION
 # ------------------------------------------------------------
 
 infographic_data <- forecast_table %>%
@@ -823,7 +817,6 @@ infographic_data <- forecast_table %>%
   )
 
 
-# Order countries by forecast revision
 infographic_data <- infographic_data %>%
 
   arrange(
@@ -839,7 +832,7 @@ infographic_data <- infographic_data %>%
 
 
 # ------------------------------------------------------------
-# 17.2 SUMMARY STATISTICS
+# 18. SUMMARY STATISTICS
 # ------------------------------------------------------------
 
 largest_upward <- infographic_data %>%
@@ -900,7 +893,6 @@ countries_total <- nrow(
 )
 
 
-# Second-largest positive revisions
 top_positive <- infographic_data %>%
 
   filter(
@@ -919,7 +911,6 @@ top_positive <- infographic_data %>%
   )
 
 
-# Two largest downward revisions
 top_negative <- infographic_data %>%
 
   filter(
@@ -936,7 +927,7 @@ top_negative <- infographic_data %>%
 
 
 # ------------------------------------------------------------
-# 17.3 MAIN BAR CHART
+# 19. MAIN BAR CHART
 # ------------------------------------------------------------
 
 revision_chart <- ggplot(
@@ -1010,7 +1001,6 @@ revision_chart <- ggplot(
   ) +
 
   theme(
-
     legend.position = "bottom",
 
     legend.text = element_text(
@@ -1053,7 +1043,7 @@ revision_chart <- ggplot(
 
 
 # ------------------------------------------------------------
-# 17.4 KPI PANEL
+# 20. KPI PANEL
 # ------------------------------------------------------------
 
 kpi_text <- paste0(
@@ -1130,11 +1120,10 @@ kpi_panel <- ggplot() +
 
 
 # ------------------------------------------------------------
-# 17.5 KEY TAKEAWAYS PANEL
+# 21. KEY TAKEAWAYS PANEL
 # ------------------------------------------------------------
 
 positive_takeaway <- paste0(
-
   largest_upward$COUNTRY,
   " recorded the largest upward revision (+",
   sprintf(
@@ -1146,23 +1135,19 @@ positive_takeaway <- paste0(
 
 
 second_positive_takeaway <- paste0(
-
   paste(
     top_positive$COUNTRY,
     collapse = " and "
   ),
-
   " also received stronger growth forecasts."
 )
 
 
 negative_takeaway <- paste0(
-
   paste(
     top_negative$COUNTRY,
     collapse = " and "
   ),
-
   " experienced the largest downward revisions."
 )
 
@@ -1244,34 +1229,34 @@ takeaway_panel <- ggplot() +
 
 
 # ------------------------------------------------------------
-# 17.6 COMBINE INFOGRAPHIC
+# 22. COMBINE INFOGRAPHIC
 # ------------------------------------------------------------
 
-right_panel <- kpi_panel /
-  takeaway_panel +
-
-  plot_layout(
-    heights = c(
-      0.46,
-      0.54
-    )
+right_panel <- patchwork::wrap_plots(
+  kpi_panel,
+  takeaway_panel,
+  ncol = 1,
+  heights = c(
+    0.46,
+    0.54
   )
+)
 
 
-infographic_plot <- revision_chart |
-  right_panel
+infographic_plot <- patchwork::wrap_plots(
+  revision_chart,
+  right_panel,
+  ncol = 2,
+  widths = c(
+    1.65,
+    1
+  )
+)
 
 
 infographic_plot <- infographic_plot +
 
-  plot_layout(
-    widths = c(
-      1.65,
-      1
-    )
-  ) +
-
-  plot_annotation(
+  patchwork::plot_annotation(
 
     title =
       "IMF 2026 Growth Forecast Revisions in Latin America",
@@ -1320,14 +1305,13 @@ infographic_plot <- infographic_plot +
   )
 
 
-# Display infographic
 print(
   infographic_plot
 )
 
 
 # ------------------------------------------------------------
-# 18. EXPORT INFOGRAPHIC
+# 23. EXPORT INFOGRAPHIC
 # ------------------------------------------------------------
 
 infographic_output_path <- file.path(
@@ -1347,7 +1331,7 @@ ggsave(
 
 
 # ------------------------------------------------------------
-# 19. COMPLETION CHECK
+# 24. COMPLETION CHECK
 # ------------------------------------------------------------
 
 stopifnot(
