@@ -86,7 +86,6 @@ library(patchwork)
 
 get_script_path <- function() {
 
-  # Option 1: RStudio
   if (
     interactive() &&
     requireNamespace("rstudioapi", quietly = TRUE) &&
@@ -108,7 +107,6 @@ get_script_path <- function() {
   }
 
 
-  # Option 2: Rscript from command line
   command_args <- commandArgs(
     trailingOnly = FALSE
   )
@@ -138,7 +136,6 @@ get_script_path <- function() {
   }
 
 
-  # Fallback
   normalizePath(
     file.path(
       getwd(),
@@ -351,7 +348,7 @@ harmonize_weo <- function(
   }
 
 
-  harmonized_data <- data %>%
+  data %>%
 
     select(
       SERIES_CODE,
@@ -381,9 +378,6 @@ harmonize_weo <- function(
       !is.na(INDICATOR),
       !is.na(SERIES_CODE)
     )
-
-
-  harmonized_data
 }
 
 
@@ -462,25 +456,10 @@ data_summary <- weo_all %>%
 
   summarise(
     observations = n(),
-
-    countries = n_distinct(
-      COUNTRY
-    ),
-
-    indicators = n_distinct(
-      SERIES_CODE
-    ),
-
-    first_year = min(
-      year,
-      na.rm = TRUE
-    ),
-
-    last_year = max(
-      year,
-      na.rm = TRUE
-    ),
-
+    countries = n_distinct(COUNTRY),
+    indicators = n_distinct(SERIES_CODE),
+    first_year = min(year, na.rm = TRUE),
+    last_year = max(year, na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -493,12 +472,6 @@ print(
 # ------------------------------------------------------------
 # 8. REAL GDP GROWTH FORECASTS
 # ------------------------------------------------------------
-
-# Exact IMF WEO real GDP growth series:
-# *.NGDP_RPCH.A
-#
-# Exact matching prevents inclusion of related series such as
-# NGDP_RPCHMK.
 
 gdp_growth_2026 <- weo_all %>%
 
@@ -517,9 +490,7 @@ gdp_growth_2026 <- weo_all %>%
   ) %>%
 
   mutate(
-    value = as.numeric(
-      value
-    )
+    value = as.numeric(value)
   )
 
 
@@ -576,17 +547,9 @@ forecast_revisions <- gdp_growth_2026 %>%
   ) %>%
 
   mutate(
-    forecast_oct_2025 = as.numeric(
-      forecast_oct_2025
-    ),
-
-    forecast_apr_2026 = as.numeric(
-      forecast_apr_2026
-    ),
-
-    forecast_oct_2026 = as.numeric(
-      forecast_oct_2026
-    )
+    forecast_oct_2025 = as.numeric(forecast_oct_2025),
+    forecast_apr_2026 = as.numeric(forecast_apr_2026),
+    forecast_oct_2026 = as.numeric(forecast_oct_2026)
   )
 
 
@@ -684,29 +647,6 @@ latin_america_revisions <- forecast_revisions %>%
   )
 
 
-countries_found <- unique(
-  latin_america_revisions$COUNTRY
-)
-
-
-countries_missing <- setdiff(
-  selected_countries,
-  countries_found
-)
-
-
-if (length(countries_missing) > 0) {
-
-  message(
-    "Selected countries not found in the final dataset: ",
-    paste(
-      countries_missing,
-      collapse = ", "
-    )
-  )
-}
-
-
 # ------------------------------------------------------------
 # 14. ANALYTICAL TABLE
 # ------------------------------------------------------------
@@ -783,14 +723,22 @@ write_csv(
 infographic_data <- forecast_table %>%
 
   filter(
-    !is.na(revision_oct26_vs_oct25)
+    !is.na(
+      revision_oct26_vs_oct25
+    )
   ) %>%
 
   mutate(
 
+    revision_clean = if_else(
+      abs(revision_oct26_vs_oct25) < 0.05,
+      0,
+      revision_oct26_vs_oct25
+    ),
+
     direction = case_when(
-      revision_oct26_vs_oct25 > 0 ~ "Upward revision",
-      revision_oct26_vs_oct25 < 0 ~ "Downward revision",
+      revision_clean > 0 ~ "Upward revision",
+      revision_clean < 0 ~ "Downward revision",
       TRUE ~ "No revision"
     ),
 
@@ -800,19 +748,24 @@ infographic_data <- forecast_table %>%
       COUNTRY
     ),
 
-    value_label = if_else(
-      revision_oct26_vs_oct25 > 0,
-      paste0(
-        "+",
+    value_label = case_when(
+
+      revision_clean > 0 ~
+        paste0(
+          "+",
+          sprintf(
+            "%.1f",
+            revision_clean
+          )
+        ),
+
+      revision_clean < 0 ~
         sprintf(
           "%.1f",
-          revision_oct26_vs_oct25
-        )
-      ),
-      sprintf(
-        "%.1f",
-        revision_oct26_vs_oct25
-      )
+          revision_clean
+        ),
+
+      TRUE ~ "0.0"
     )
   )
 
@@ -820,7 +773,7 @@ infographic_data <- forecast_table %>%
 infographic_data <- infographic_data %>%
 
   arrange(
-    revision_oct26_vs_oct25
+    revision_clean
   ) %>%
 
   mutate(
@@ -838,11 +791,11 @@ infographic_data <- infographic_data %>%
 largest_upward <- infographic_data %>%
 
   filter(
-    revision_oct26_vs_oct25 > 0
+    revision_clean > 0
   ) %>%
 
   slice_max(
-    revision_oct26_vs_oct25,
+    revision_clean,
     n = 1,
     with_ties = FALSE
   )
@@ -851,11 +804,11 @@ largest_upward <- infographic_data %>%
 largest_downward <- infographic_data %>%
 
   filter(
-    revision_oct26_vs_oct25 < 0
+    revision_clean < 0
   ) %>%
 
   slice_min(
-    revision_oct26_vs_oct25,
+    revision_clean,
     n = 1,
     with_ties = FALSE
   )
@@ -864,7 +817,7 @@ largest_downward <- infographic_data %>%
 countries_upward <- infographic_data %>%
 
   filter(
-    revision_oct26_vs_oct25 > 0
+    revision_clean > 0
   ) %>%
 
   nrow()
@@ -873,7 +826,7 @@ countries_upward <- infographic_data %>%
 countries_downward <- infographic_data %>%
 
   filter(
-    revision_oct26_vs_oct25 < 0
+    revision_clean < 0
   ) %>%
 
   nrow()
@@ -882,7 +835,7 @@ countries_downward <- infographic_data %>%
 countries_unchanged <- infographic_data %>%
 
   filter(
-    revision_oct26_vs_oct25 == 0
+    revision_clean == 0
   ) %>%
 
   nrow()
@@ -896,13 +849,13 @@ countries_total <- nrow(
 top_positive <- infographic_data %>%
 
   filter(
-    revision_oct26_vs_oct25 > 0,
+    revision_clean > 0,
     COUNTRY != largest_upward$COUNTRY
   ) %>%
 
   arrange(
     desc(
-      revision_oct26_vs_oct25
+      revision_clean
     )
   ) %>%
 
@@ -914,11 +867,11 @@ top_positive <- infographic_data %>%
 top_negative <- infographic_data %>%
 
   filter(
-    revision_oct26_vs_oct25 < 0
+    revision_clean < 0
   ) %>%
 
   arrange(
-    revision_oct26_vs_oct25
+    revision_clean
   ) %>%
 
   slice_head(
@@ -933,7 +886,7 @@ top_negative <- infographic_data %>%
 revision_chart <- ggplot(
   infographic_data,
   aes(
-    x = revision_oct26_vs_oct25,
+    x = revision_clean,
     y = country_label,
     fill = direction
   )
@@ -955,7 +908,7 @@ revision_chart <- ggplot(
       label = value_label
     ),
     hjust = ifelse(
-      infographic_data$revision_oct26_vs_oct25 >= 0,
+      infographic_data$revision_clean >= 0,
       -0.15,
       1.15
     ),
@@ -1053,7 +1006,7 @@ kpi_text <- paste0(
   ": +",
   sprintf(
     "%.1f",
-    largest_upward$revision_oct26_vs_oct25
+    largest_upward$revision_clean
   ),
   " pp\n\n",
 
@@ -1062,7 +1015,7 @@ kpi_text <- paste0(
   ": ",
   sprintf(
     "%.1f",
-    largest_downward$revision_oct26_vs_oct25
+    largest_downward$revision_clean
   ),
   " pp\n\n",
 
@@ -1093,13 +1046,13 @@ kpi_panel <- ggplot() +
 
   annotate(
     "text",
-    x = 0.07,
-    y = 0.93,
+    x = 0.06,
+    y = 0.95,
     label = kpi_text,
     hjust = 0,
     vjust = 1,
-    lineheight = 1.3,
-    size = 4.5,
+    lineheight = 1.28,
+    size = 4.0,
     color = "#0F2747",
     fontface = "bold"
   ) +
@@ -1128,7 +1081,7 @@ positive_takeaway <- paste0(
   " recorded the largest upward revision (+",
   sprintf(
     "%.1f",
-    largest_upward$revision_oct26_vs_oct25
+    largest_upward$revision_clean
   ),
   " pp)."
 )
@@ -1152,18 +1105,40 @@ negative_takeaway <- paste0(
 )
 
 
-takeaway_text <- paste0(
+takeaway_lines <- c(
+  str_wrap(
+    paste0(
+      "• ",
+      positive_takeaway
+    ),
+    width = 46
+  ),
 
-  "• ",
-  positive_takeaway,
-  "\n\n",
+  "",
 
-  "• ",
-  second_positive_takeaway,
-  "\n\n",
+  str_wrap(
+    paste0(
+      "• ",
+      second_positive_takeaway
+    ),
+    width = 46
+  ),
 
-  "• ",
-  negative_takeaway
+  "",
+
+  str_wrap(
+    paste0(
+      "• ",
+      negative_takeaway
+    ),
+    width = 46
+  )
+)
+
+
+takeaway_text <- paste(
+  takeaway_lines,
+  collapse = "\n"
 )
 
 
@@ -1183,7 +1158,7 @@ takeaway_panel <- ggplot() +
     "rect",
     xmin = 0,
     xmax = 1,
-    ymin = 0.82,
+    ymin = 0.83,
     ymax = 1,
     fill = "#0F3158",
     color = NA
@@ -1192,11 +1167,11 @@ takeaway_panel <- ggplot() +
   annotate(
     "text",
     x = 0.06,
-    y = 0.91,
+    y = 0.915,
     label = "Key takeaways",
     hjust = 0,
     vjust = 0.5,
-    size = 5.5,
+    size = 5.0,
     color = "white",
     fontface = "bold"
   ) +
@@ -1204,12 +1179,12 @@ takeaway_panel <- ggplot() +
   annotate(
     "text",
     x = 0.06,
-    y = 0.73,
+    y = 0.76,
     label = takeaway_text,
     hjust = 0,
     vjust = 1,
-    lineheight = 1.25,
-    size = 4,
+    lineheight = 1.2,
+    size = 3.65,
     color = "#172033"
   ) +
 
@@ -1237,8 +1212,8 @@ right_panel <- patchwork::wrap_plots(
   takeaway_panel,
   ncol = 1,
   heights = c(
-    0.46,
-    0.54
+    0.48,
+    0.52
   )
 )
 
@@ -1248,8 +1223,8 @@ infographic_plot <- patchwork::wrap_plots(
   right_panel,
   ncol = 2,
   widths = c(
-    1.65,
-    1
+    1.45,
+    1.15
   )
 )
 
@@ -1276,13 +1251,13 @@ infographic_plot <- infographic_plot +
     theme = theme(
 
       plot.title = element_text(
-        size = 24,
+        size = 23,
         face = "bold",
         color = "#0F2747"
       ),
 
       plot.subtitle = element_text(
-        size = 13,
+        size = 12.5,
         color = "#384454",
         margin = margin(
           b = 18
@@ -1296,10 +1271,10 @@ infographic_plot <- infographic_plot +
       ),
 
       plot.margin = margin(
-        20,
-        20,
+        18,
+        18,
         12,
-        20
+        18
       )
     )
   )
@@ -1324,7 +1299,7 @@ ggsave(
   filename = infographic_output_path,
   plot = infographic_plot,
   width = 14,
-  height = 8,
+  height = 8.2,
   dpi = 300,
   bg = "white"
 )
