@@ -775,115 +775,574 @@ write_csv(
 
 
 # ------------------------------------------------------------
-# 17. VISUALIZATION
+# 17. INFOGRAPHIC VISUALIZATION
 # ------------------------------------------------------------
 
-forecast_plot_data <- forecast_table %>%
+# This section transforms the analytical results into a
+# compact policy-style infographic while preserving full
+# reproducibility from the underlying WEO data.
+
+# ------------------------------------------------------------
+# 17.1 PREPARE INFOGRAPHIC DATA
+# ------------------------------------------------------------
+
+infographic_data <- forecast_table %>%
 
   filter(
-    !is.na(
+    !is.na(revision_oct26_vs_oct25)
+  ) %>%
+
+  mutate(
+
+    direction = case_when(
+      revision_oct26_vs_oct25 > 0 ~ "Upward revision",
+      revision_oct26_vs_oct25 < 0 ~ "Downward revision",
+      TRUE ~ "No revision"
+    ),
+
+    country_label = if_else(
+      COUNTRY == "El Salvador",
+      paste0("★ ", COUNTRY),
+      COUNTRY
+    ),
+
+    value_label = if_else(
+      revision_oct26_vs_oct25 > 0,
+      paste0(
+        "+",
+        sprintf(
+          "%.1f",
+          revision_oct26_vs_oct25
+        )
+      ),
+      sprintf(
+        "%.1f",
+        revision_oct26_vs_oct25
+      )
+    )
+  )
+
+
+# Order countries by forecast revision
+infographic_data <- infographic_data %>%
+
+  arrange(
+    revision_oct26_vs_oct25
+  ) %>%
+
+  mutate(
+    country_label = factor(
+      country_label,
+      levels = country_label
+    )
+  )
+
+
+# ------------------------------------------------------------
+# 17.2 SUMMARY STATISTICS
+# ------------------------------------------------------------
+
+largest_upward <- infographic_data %>%
+
+  filter(
+    revision_oct26_vs_oct25 > 0
+  ) %>%
+
+  slice_max(
+    revision_oct26_vs_oct25,
+    n = 1,
+    with_ties = FALSE
+  )
+
+
+largest_downward <- infographic_data %>%
+
+  filter(
+    revision_oct26_vs_oct25 < 0
+  ) %>%
+
+  slice_min(
+    revision_oct26_vs_oct25,
+    n = 1,
+    with_ties = FALSE
+  )
+
+
+countries_upward <- infographic_data %>%
+
+  filter(
+    revision_oct26_vs_oct25 > 0
+  ) %>%
+
+  nrow()
+
+
+countries_downward <- infographic_data %>%
+
+  filter(
+    revision_oct26_vs_oct25 < 0
+  ) %>%
+
+  nrow()
+
+
+countries_unchanged <- infographic_data %>%
+
+  filter(
+    revision_oct26_vs_oct25 == 0
+  ) %>%
+
+  nrow()
+
+
+countries_total <- nrow(
+  infographic_data
+)
+
+
+# Second-largest positive revisions
+top_positive <- infographic_data %>%
+
+  filter(
+    revision_oct26_vs_oct25 > 0,
+    COUNTRY != largest_upward$COUNTRY
+  ) %>%
+
+  arrange(
+    desc(
       revision_oct26_vs_oct25
     )
   ) %>%
 
-  mutate(
-    COUNTRY = reorder(
-      COUNTRY,
-      revision_oct26_vs_oct25
-    )
+  slice_head(
+    n = 2
   )
 
 
-forecast_revision_plot <- ggplot(
-  forecast_plot_data,
+# Two largest downward revisions
+top_negative <- infographic_data %>%
+
+  filter(
+    revision_oct26_vs_oct25 < 0
+  ) %>%
+
+  arrange(
+    revision_oct26_vs_oct25
+  ) %>%
+
+  slice_head(
+    n = 2
+  )
+
+
+# ------------------------------------------------------------
+# 17.3 MAIN BAR CHART
+# ------------------------------------------------------------
+
+revision_chart <- ggplot(
+  infographic_data,
   aes(
     x = revision_oct26_vs_oct25,
-    y = COUNTRY
+    y = country_label,
+    fill = direction
   )
 ) +
 
   geom_col(
-    width = 0.68,
-    fill = "#2A5298"
+    width = 0.68
   ) +
 
   geom_vline(
     xintercept = 0,
     linetype = "dashed",
-    linewidth = 0.4
+    linewidth = 0.6,
+    color = "#0F1F33"
+  ) +
+
+  geom_text(
+    aes(
+      label = value_label
+    ),
+    hjust = ifelse(
+      infographic_data$revision_oct26_vs_oct25 >= 0,
+      -0.15,
+      1.15
+    ),
+    fontface = "bold",
+    size = 4,
+    color = "#0F1F33"
+  ) +
+
+  scale_fill_manual(
+    values = c(
+      "Upward revision" = "#2A5A9E",
+      "Downward revision" = "#B83250",
+      "No revision" = "#A7B2C1"
+    )
+  ) +
+
+  scale_x_continuous(
+    breaks = seq(
+      -2,
+      2,
+      0.5
+    ),
+    limits = c(
+      -2.15,
+      2.35
+    ),
+    expand = expansion(
+      mult = c(
+        0.02,
+        0.04
+      )
+    )
   ) +
 
   labs(
-    title =
-      "Revisions to IMF 2026 Real GDP Growth Forecasts",
-
-    subtitle =
-      "Change between the October 2025 and October 2026 WEO vintages",
-
-    x =
-      "Forecast revision (percentage points)",
-
+    x = "Forecast revision (percentage points)",
     y = NULL,
-
-    caption =
-      "Source: IMF World Economic Outlook Database."
+    fill = NULL
   ) +
 
   theme_minimal(
-    base_size = 12
+    base_size = 13
   ) +
 
   theme(
-    panel.grid.major.y =
-      element_blank(),
 
-    panel.grid.minor =
-      element_blank(),
+    legend.position = "bottom",
 
-    plot.title =
-      element_text(
-        face = "bold",
-        size = 15
-      ),
+    legend.text = element_text(
+      size = 10
+    ),
 
-    plot.subtitle =
-      element_text(
-        size = 11
-      ),
+    panel.grid.major.y = element_blank(),
 
-    plot.caption =
-      element_text(
-        hjust = 0,
-        size = 9
+    panel.grid.minor = element_blank(),
+
+    panel.grid.major.x = element_line(
+      color = "#E2E7EE",
+      linewidth = 0.5
+    ),
+
+    axis.text.y = element_text(
+      size = 12,
+      color = "#172033"
+    ),
+
+    axis.text.x = element_text(
+      size = 10,
+      color = "#4A5568"
+    ),
+
+    axis.title.x = element_text(
+      size = 11,
+      margin = margin(
+        t = 10
       )
+    ),
+
+    plot.margin = margin(
+      5,
+      25,
+      5,
+      5
+    )
   )
 
 
+# ------------------------------------------------------------
+# 17.4 KPI PANEL
+# ------------------------------------------------------------
+
+kpi_text <- paste0(
+
+  "LARGEST UPWARD REVISION\n",
+  largest_upward$COUNTRY,
+  ": +",
+  sprintf(
+    "%.1f",
+    largest_upward$revision_oct26_vs_oct25
+  ),
+  " pp\n\n",
+
+  "LARGEST DOWNWARD REVISION\n",
+  largest_downward$COUNTRY,
+  ": ",
+  sprintf(
+    "%.1f",
+    largest_downward$revision_oct26_vs_oct25
+  ),
+  " pp\n\n",
+
+  "COUNTRIES REVISED UPWARD\n",
+  countries_upward,
+  " of ",
+  countries_total,
+  "\n\n",
+
+  "COUNTRIES REVISED DOWNWARD\n",
+  countries_downward,
+  " of ",
+  countries_total
+)
+
+
+kpi_panel <- ggplot() +
+
+  annotate(
+    "rect",
+    xmin = 0,
+    xmax = 1,
+    ymin = 0,
+    ymax = 1,
+    fill = "#EEF3FA",
+    color = NA
+  ) +
+
+  annotate(
+    "text",
+    x = 0.07,
+    y = 0.93,
+    label = kpi_text,
+    hjust = 0,
+    vjust = 1,
+    lineheight = 1.3,
+    size = 4.5,
+    color = "#0F2747",
+    fontface = "bold"
+  ) +
+
+  coord_cartesian(
+    xlim = c(
+      0,
+      1
+    ),
+    ylim = c(
+      0,
+      1
+    ),
+    clip = "off"
+  ) +
+
+  theme_void()
+
+
+# ------------------------------------------------------------
+# 17.5 KEY TAKEAWAYS PANEL
+# ------------------------------------------------------------
+
+positive_takeaway <- paste0(
+
+  largest_upward$COUNTRY,
+  " recorded the largest upward revision (+",
+  sprintf(
+    "%.1f",
+    largest_upward$revision_oct26_vs_oct25
+  ),
+  " pp)."
+)
+
+
+second_positive_takeaway <- paste0(
+
+  paste(
+    top_positive$COUNTRY,
+    collapse = " and "
+  ),
+
+  " also received stronger growth forecasts."
+)
+
+
+negative_takeaway <- paste0(
+
+  paste(
+    top_negative$COUNTRY,
+    collapse = " and "
+  ),
+
+  " experienced the largest downward revisions."
+)
+
+
+takeaway_text <- paste0(
+
+  "• ",
+  positive_takeaway,
+  "\n\n",
+
+  "• ",
+  second_positive_takeaway,
+  "\n\n",
+
+  "• ",
+  negative_takeaway
+)
+
+
+takeaway_panel <- ggplot() +
+
+  annotate(
+    "rect",
+    xmin = 0,
+    xmax = 1,
+    ymin = 0,
+    ymax = 1,
+    fill = "#FAF7F3",
+    color = NA
+  ) +
+
+  annotate(
+    "rect",
+    xmin = 0,
+    xmax = 1,
+    ymin = 0.82,
+    ymax = 1,
+    fill = "#0F3158",
+    color = NA
+  ) +
+
+  annotate(
+    "text",
+    x = 0.06,
+    y = 0.91,
+    label = "Key takeaways",
+    hjust = 0,
+    vjust = 0.5,
+    size = 5.5,
+    color = "white",
+    fontface = "bold"
+  ) +
+
+  annotate(
+    "text",
+    x = 0.06,
+    y = 0.73,
+    label = takeaway_text,
+    hjust = 0,
+    vjust = 1,
+    lineheight = 1.25,
+    size = 4,
+    color = "#172033"
+  ) +
+
+  coord_cartesian(
+    xlim = c(
+      0,
+      1
+    ),
+    ylim = c(
+      0,
+      1
+    ),
+    clip = "off"
+  ) +
+
+  theme_void()
+
+
+# ------------------------------------------------------------
+# 17.6 COMBINE INFOGRAPHIC
+# ------------------------------------------------------------
+
+right_panel <- kpi_panel /
+  takeaway_panel +
+
+  plot_layout(
+    heights = c(
+      0.46,
+      0.54
+    )
+  )
+
+
+infographic_plot <- revision_chart |
+  right_panel
+
+
+infographic_plot <- infographic_plot +
+
+  plot_layout(
+    widths = c(
+      1.65,
+      1
+    )
+  ) +
+
+  plot_annotation(
+
+    title =
+      "IMF 2026 Growth Forecast Revisions in Latin America",
+
+    subtitle =
+      paste0(
+        "Change in real GDP growth forecasts between the ",
+        "October 2025 and October 2026 WEO vintages"
+      ),
+
+    caption =
+      paste0(
+        "Source: IMF World Economic Outlook Database.    ",
+        "Author: Victor Manuel Cruz Bonilla"
+      ),
+
+    theme = theme(
+
+      plot.title = element_text(
+        size = 24,
+        face = "bold",
+        color = "#0F2747"
+      ),
+
+      plot.subtitle = element_text(
+        size = 13,
+        color = "#384454",
+        margin = margin(
+          b = 18
+        )
+      ),
+
+      plot.caption = element_text(
+        size = 9,
+        color = "#334155",
+        hjust = 0
+      ),
+
+      plot.margin = margin(
+        20,
+        20,
+        12,
+        20
+      )
+    )
+  )
+
+
+# Display infographic
 print(
-  forecast_revision_plot
+  infographic_plot
 )
 
 
 # ------------------------------------------------------------
-# 18. EXPORT FIGURE
+# 18. EXPORT INFOGRAPHIC
 # ------------------------------------------------------------
 
-figure_output_path <- file.path(
+infographic_output_path <- file.path(
   output_dir,
-  "gdp_growth_forecast_revisions_2026.png"
+  "imf_growth_forecast_revisions_infographic.png"
 )
 
 
 ggsave(
-  filename = figure_output_path,
-
-  plot = forecast_revision_plot,
-
-  width = 9,
-
-  height = 6,
-
-  dpi = 300
+  filename = infographic_output_path,
+  plot = infographic_plot,
+  width = 14,
+  height = 8,
+  dpi = 300,
+  bg = "white"
 )
 
 
@@ -896,7 +1355,7 @@ stopifnot(
     table_output_path
   ),
   file.exists(
-    figure_output_path
+    infographic_output_path
   )
 )
 
@@ -911,6 +1370,6 @@ message(
 )
 
 message(
-  "Figure saved to: ",
-  figure_output_path
+  "Infographic saved to: ",
+  infographic_output_path
 )
